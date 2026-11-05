@@ -683,6 +683,12 @@ Output: GLB file path
             ],
         )
 
+    @classmethod
+    def fingerprint_inputs(cls, **kwargs):
+        """Run on every queue so each run saves a new file, even with the same inputs."""
+        import uuid
+        return uuid.uuid4().hex
+
     @staticmethod
     def _parse_intrinsics(intrinsics_str, batch_idx=0):
         """Parse camera intrinsics from JSON string."""
@@ -970,6 +976,7 @@ Output: GLB file path
     def execute(cls, depth_raw, confidence, intrinsics=None, sky_mask=None, source_image=None,
                 confidence_threshold=0.1, depth_edge_threshold=0.1, downsample=1, target_faces=100000, filename_prefix="mesh", allow_around_1=False, use_draco_compression=False):
         """Convert depth map to mesh and save as GLB."""
+        import uuid
         from pathlib import Path
 
         # Validate depth
@@ -1089,7 +1096,8 @@ Output: GLB file path
         output_path.mkdir(parents=True, exist_ok=True)
 
         # Generate filename
-        filename = f"{filename_prefix}_0000.glb"
+        # Unique name per run: the Floyo viewer does not reload a file with the same name
+        filename = f"{filename_prefix}_{uuid.uuid4().hex[:8]}.glb"
         filepath = output_path / filename
 
         # Ensure parent directory exists (for subfolder prefixes like "subfolder/mesh")
@@ -1111,6 +1119,14 @@ Output: GLB file path
 
         # Extract subfolder from filename if present
         subfolder = str(Path(filename).parent) if Path(filename).parent != Path(".") else ""
-        return io.NodeOutput(str(filepath), ui={
+
+        # Return the path relative to the output folder (e.g. "mesh_ab12cd34.glb").
+        # ComfyUI's Preview 3D rejects absolute paths with "Invalid file path".
+        try:
+            output_file_path = filepath.resolve().relative_to(output_path.resolve()).as_posix()
+        except ValueError:
+            output_file_path = str(filepath)
+
+        return io.NodeOutput(output_file_path, ui={
             "meshes": [{"filename": Path(filename).name, "subfolder": subfolder, "type": "output"}]
         })
